@@ -1,0 +1,99 @@
+loki:
+  deploymentMode: SimpleScalable
+  serviceAccount:
+    create: false
+    name: loki
+  commonConfig:
+    path_prefix: /var/loki
+    replication_factor: 1
+  storage:
+    type: s3
+    bucketNames:
+      chunks: ap-dev-monitoring-logs-loki
+      ruler: ap-dev-monitoring-logs-loki
+      admin: ap-dev-monitoring-logs-loki
+    s3:
+      region: eu-west-2
+      s3ForcePathStyle: true
+  limits_config:
+    retention_period: 30d
+  schemaConfig:
+    configs:
+      - from: "2024-01-01"
+        store: tsdb
+        object_store: s3
+        schema: v13
+        index:
+          prefix: loki_index_
+          period: 24h
+  storageConfig:
+    aws:
+      bucketnames: ap-dev-monitoring-logs-loki
+      region: eu-west-2
+      s3forcepathstyle: true
+
+write:
+  replicas: 1
+  persistence:
+    volumeClaimsEnabled: false
+
+read:
+  replicas: 1
+
+backend:
+  replicas: 1
+  persistence:
+    volumeClaimsEnabled: false
+
+chunksCache:
+  enabled: false
+
+resultsCache:
+  enabled: false
+
+promtail:
+  enabled: true
+
+promtailExtraScrapeConfigs: |
+  - job_name: kubernetes-pods-name
+    pipeline_stages:
+      - multiline:
+          firstline: '^(?:\\S+\\s+){4}\\['
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: pods
+          __path__: /var/log/pods/*/*/*.log
+          __path_exclude__: /var/log/pods/*/loki*/*.log
+
+lokiCanary:
+  kind: Deployment
+  replicas: 1
+
+grafana:
+  enabled: true
+  adminPassword: 0khG2me4bQa03agx02KC
+  initChownData:
+    enabled: true
+    securityContext:
+      runAsUser: 0
+  sidecar:
+    datasources:
+      enabled: false
+  datasources:
+    datasources.yaml:
+      apiVersion: 1
+      datasources:
+        - name: Loki
+          type: loki
+          url: http://{{ .Release.Name }}:3100
+          access: proxy
+          jsonData:
+            timeInterval: 30s
+            httpHeaderName1: X-Scope-OrgID
+            healthCheckEnabled: false
+          secureJsonData:
+            httpHeaderValue1: "1"
+  service:
+    type: ClusterIP

@@ -1,0 +1,114 @@
+loki:
+  deploymentMode: SimpleScalable
+  serviceAccount:
+    create: false
+    name: loki
+  structuredConfig:
+    auth_enabled: false
+    server:
+      http_listen_port: 3100
+    common:
+      path_prefix: /var/loki
+      replication_factor: 1
+      ring:
+        kvstore:
+          store: memberlist
+      storage:
+        backend: s3
+        s3:
+          bucket_name: ap-dev-monitoring-logs-loki
+          region: eu-west-2
+          s3forcepathstyle: true
+    schema_config:
+      configs:
+        - from: "2024-01-01"
+          store: tsdb
+          object_store: s3
+          schema: v13
+          index:
+            prefix: loki_index_
+            period: 24h
+    storage_config:
+      aws:
+        bucketnames: ap-dev-monitoring-logs-loki
+        region: eu-west-2
+        s3forcepathstyle: true
+      tsdb_shipper:
+        shared_store: s3
+        active_index_directory: /var/loki/index
+        cache_location: /var/loki/cache
+    chunk_store_config:
+      max_look_back_period: 0s
+    compactor:
+      working_directory: /var/loki/compactor
+      shared_store: s3
+    ruler:
+      storage:
+        type: s3
+        s3:
+          bucket: ap-dev-monitoring-logs-loki
+          region: eu-west-2
+          s3forcepathstyle: true
+      rule_path: /tmp/loki/rules
+      alertmanager_url: ""
+    limits_config:
+      retention_period: 30
+  persistence:
+    enabled: false
+
+write:
+  replicas: 1
+
+read:
+  replicas: 1
+
+backend:
+  replicas: 1
+
+promtail:
+  enabled: true
+
+promtailExtraScrapeConfigs: |
+  - job_name: kubernetes-pods-name
+    pipeline_stages:
+      - multiline:
+          firstline: '^(?:\S+\s+){4}\['
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: pods
+          __path__: /var/log/pods/*/*/*.log
+          __path_exclude__: /var/log/pods/*/loki*/*.log
+
+lokiCanary:
+  kind: Deployment
+  replicas: 1
+
+grafana:
+  enabled: true
+  adminPassword: 0khG2me4bQa03agx02KC
+  initChownData:
+    enabled: true
+    securityContext:
+      runAsUser: 0
+  sidecar:
+    datasources:
+      enabled: false
+  datasources:
+    datasources.yaml:
+      apiVersion: 1
+      datasources:
+        - name: Loki
+          type: loki
+          url: http://{{ .Release.Name }}:3100
+          access: proxy
+          jsonData:
+            timeInterval: 30s
+            httpHeaderName1: X-Scope-OrgID
+            healthCheckEnabled: false
+          secureJsonData:
+            httpHeaderValue1: "1"
+  service:
+    type: ClusterIP
+

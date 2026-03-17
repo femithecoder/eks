@@ -1,0 +1,54 @@
+loki:
+  auth_enabled: false
+  commonConfig:
+    path_prefix: /var/loki
+    replication_factor: 1
+
+  compactor:
+    apply_retention_interval: 1h
+    compaction_interval: 5m
+    retention_delete_worker_count: 500
+    retention_enabled: true
+    shared_store: s3
+    working_directory: /data/compactor
+  schema_config:
+    configs:
+    - from: 2020-05-15
+      store: boltdb-shipper
+      object_store: s3
+      schema: v11
+      index:
+        period: 24h
+        prefix: loki_index_
+    
+  storage_config:
+    aws:
+      region: eu-west-2
+      s3: ap-dev-monitoring-logs-loki # <-- should I add a S3 Access Point here instead ?
+      s3forcepathstyle: false
+      #s3forcepathstyle: true  <-- This is the main culprit; comment it out ? -? https://github.com/grafana/loki/issues/7024
+    boltdb_shipper:
+      active_index_directory: /data/index
+      build_per_tenant_index: true
+      cache_location: /data/boltdb-cache
+      shared_store: s3
+  serviceAccount:
+    create: true
+    name: loki-sa
+    annotations:
+       eks.amazonaws.com/role-arn: "arn:aws:iam::971422715953:role/afp-dev-cluster-new-loki"
+  write:
+     replicas: 2
+  read:
+    replicas: 1
+
+grafana:
+    enabled: true
+    sidecar:
+      datasources:
+        enabled: true
+    image:
+      tag:  7.5.17 #<-- because of bug https://github.com/grafana/loki/issues/8136
+    grafana.ini:
+      users:
+        default_theme: dark
